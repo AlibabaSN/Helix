@@ -12,6 +12,7 @@ from shared.domain.entities import (
     Recommendation,
     RecommendationStatus,
 )
+from shared.domain.repositories.email import EmailRepository
 from shared.domain.repositories.issue import IssueRepository
 from shared.domain.repositories.notification import NotificationRepository
 from shared.domain.repositories.recommendation import RecommendationRepository
@@ -242,3 +243,174 @@ class TwilioNotificationRepository(NotificationRepository):
                     )
                 except Exception:
                     self.logger.error(f"[Twilio SMS Failed] Error: {e}")
+
+
+class LogEmailRepository(EmailRepository):
+    """Email repository implementation that logs outgoing email messages."""
+
+    def send_email(
+        self, to_email: str, subject: str, message: str, is_html: bool = False
+    ) -> None:
+        logger = _get_notification_logger()
+        if hasattr(logger, "info"):
+            try:
+                logger.info(
+                    "email_sent_simulated",
+                    recipient=to_email,
+                    subject=subject,
+                    is_html=is_html,
+                    message_snippet=message[:100],
+                )
+            except Exception:
+                logger.info(f"[Email Simulated] To: {to_email} | Subject: {subject}")
+
+
+class SMTPEmailRepository(EmailRepository):
+    """
+    SMTP Email Repository implementation.
+    Sends emails via SMTP server (e.g. Gmail, Mailtrap, SendGrid SMTP).
+    """
+
+    def __init__(
+        self,
+        smtp_host: str | None = None,
+        smtp_port: int | None = None,
+        smtp_user: str | None = None,
+        smtp_pass: str | None = None,
+        smtp_from: str | None = None,
+    ) -> None:
+        self.smtp_host = smtp_host or os.environ.get("SMTP_HOST", "")
+        self.smtp_port = smtp_port or int(os.environ.get("SMTP_PORT", "587"))
+        self.smtp_user = smtp_user or os.environ.get("SMTP_USER", "")
+        self.smtp_pass = smtp_pass or os.environ.get("SMTP_PASS", "")
+        self.smtp_from = (
+            smtp_from
+            or os.environ.get("SMTP_FROM", "")
+            or "Project Helix <noreply@helix.dev>"
+        )
+        self.logger = _get_notification_logger()
+
+    def send_email(
+        self, to_email: str, subject: str, message: str, is_html: bool = False
+    ) -> None:
+        if not self.smtp_host or not self.smtp_user:
+            # Fallback to simulation log
+            LogEmailRepository().send_email(to_email, subject, message, is_html)
+            return
+
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = self.smtp_from
+        msg["To"] = to_email
+
+        mime_text = MIMEText(message, "html" if is_html else "plain", "utf-8")
+        msg.attach(mime_text)
+
+        try:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=15) as server:
+                server.starttls()
+                if self.smtp_user and self.smtp_pass:
+                    server.login(self.smtp_user, self.smtp_pass)
+                server.sendmail(self.smtp_from, [to_email], msg.as_string())
+
+            if hasattr(self.logger, "info"):
+                try:
+                    self.logger.info(
+                        "email_sent_smtp",
+                        recipient=to_email,
+                        subject=subject,
+                        smtp_host=self.smtp_host,
+                    )
+                except Exception:
+                    self.logger.info(
+                        f"[Email Sent via SMTP] To: {to_email} | Subject: {subject}"
+                    )
+        except Exception as e:
+            if hasattr(self.logger, "error"):
+                try:
+                    self.logger.error(
+                        "email_smtp_failed", recipient=to_email, error=str(e)
+                    )
+                except Exception:
+                    self.logger.error(f"[Email SMTP Error] {e}")
+
+
+class HTTPEmailRepository(EmailRepository):
+    """
+    HTTP API Email Repository implementation.
+    Dispatches outbound email messages via REST / HTTP Webhook API.
+    """
+
+    def __init__(
+        self,
+        api_url: str | None = None,
+        api_key: str | None = None,
+        from_email: str | None = None,
+    ) -> None:
+        self.api_url = api_url or os.environ.get("EMAIL_API_URL", "")
+        self.api_key = (
+            api_key
+            or os.environ.get("EMAIL_API_KEY", "")
+            or os.environ.get("SENDGRID_API_KEY", "")
+        )
+        self.from_email = (
+            from_email or os.environ.get("EMAIL_FROM", "") or "noreply@helix.dev"
+        )
+        self.logger = _get_notification_logger()
+
+    def send_email(
+        self, to_email: str, subject: str, message: str, is_html: bool = False
+    ) -> None:
+        import json
+
+        if not self.api_url:
+            # Fallback to SMTP or Log
+            SMTPEmailRepository().send_email(to_email, subject, message, is_html)
+            return
+
+        payload = {
+            "to": to_email,
+            "subject": subject,
+            "message": message,
+            "is_html": is_html,
+            "from": self.from_email,
+        }
+
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self.api_url, data=data, headers=headers, method="POST"
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                resp_body = response.read().decode("utf-8")
+                if hasattr(self.logger, "info"):
+                    try:
+                        self.logger.info(
+                            "email_sent_http",
+                            recipient=to_email,
+                            subject=subject,
+                            api_url=self.api_url,
+                            response=resp_body[:150],
+                        )
+                    except Exception:
+                        self.logger.info(
+                            f"[Email Sent via HTTP API] To: {to_email} | Subject: {subject}"
+                        )
+        except Exception as e:
+            if hasattr(self.logger, "error"):
+                try:
+                    self.logger.error(
+                        "email_http_failed", recipient=to_email, error=str(e)
+                    )
+                except Exception:
+                    self.logger.error(f"[Email HTTP Error] {e}")
+
