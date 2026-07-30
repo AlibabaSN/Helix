@@ -86,7 +86,13 @@ class SQLAlchemyRecommendationRepository(RecommendationRepository):
     def __init__(self, db_session: Any) -> None:
         self.db = db_session
 
-    def save(self, recommendation: Recommendation) -> None:
+    def save(
+        self,
+        recommendation: Recommendation,
+        _suggested_category: str | None = None,
+        _suggested_department: str | None = None,
+        _confidence_score: float | None = None,
+    ) -> None:
         from services.governance.infrastructure.models import RecommendationModel
 
         db_rec = RecommendationModel(
@@ -104,6 +110,25 @@ class SQLAlchemyRecommendationRepository(RecommendationRepository):
         db_rec = (
             self.db.query(RecommendationModel)
             .filter(RecommendationModel.id == str(recommendation_id))
+            .first()
+        )
+        if not db_rec:
+            return None
+
+        return Recommendation(
+            id=uuid.UUID(db_rec.id),
+            issue_id=uuid.UUID(db_rec.issue_id),
+            evidence_ids=[uuid.uuid4()],
+            content=db_rec.rationale,
+            status=RecommendationStatus[db_rec.status],
+        )
+
+    def get_by_issue_id(self, issue_id: uuid.UUID) -> Recommendation | None:
+        from services.governance.infrastructure.models import RecommendationModel
+
+        db_rec = (
+            self.db.query(RecommendationModel)
+            .filter(RecommendationModel.issue_id == str(issue_id))
             .first()
         )
         if not db_rec:
