@@ -38,12 +38,18 @@ class SQLAlchemyIssueRepository(IssueRepository):
     def save(self, issue: Issue) -> None:
         from services.governance.infrastructure.models import IssueModel
 
+        loc_address = (
+            getattr(issue.location, "address", None)
+            or getattr(issue, "formatted_address", None)
+            or "Unknown Address"
+        )
         db_issue = IssueModel(
             id=str(issue.id),
             citizen_id=str(issue.citizen_id),
             title=issue.title,
             description=issue.description,
             category=issue.category,
+            location_address=loc_address,
             latitude=issue.location.latitude,
             longitude=issue.location.longitude,
             status=issue.status.name,
