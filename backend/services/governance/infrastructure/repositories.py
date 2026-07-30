@@ -1,54 +1,65 @@
+import base64
+import os
+import urllib.parse
+import urllib.request
 import uuid
+from typing import Any
 
-from sqlalchemy.orm import Session
-
-from services.governance.infrastructure.models import IssueDB, RecommendationDB
-from shared.domain.entities import Issue, Recommendation
-from shared.domain.enums import IssueStatus, Priority, RecommendationStatus
-from shared.domain.repositories import (
-    IssueRepository,
-    NotificationRepository,
-    RecommendationRepository,
+from shared.domain.entities import (
+    Issue,
+    IssueStatus,
+    Priority,
+    Recommendation,
+    RecommendationStatus,
 )
-from shared.domain.value_objects import Location
+from shared.domain.repositories.issue import IssueRepository
+from shared.domain.repositories.notification import NotificationRepository
+from shared.domain.repositories.recommendation import RecommendationRepository
+
+
+def _get_notification_logger() -> Any:
+    try:
+        from helix_platform.logging import get_logger
+        return get_logger("notifications")
+    except Exception:
+        import logging
+        return logging.getLogger("notifications")
 
 
 class SQLAlchemyIssueRepository(IssueRepository):
-    """SQLAlchemy implementation of the Issue Repository interface."""
+    """SQLAlchemy Implementation of Issue Repository."""
 
-    def __init__(self, db: Session) -> None:
-        self.db = db
+    def __init__(self, db_session: Any) -> None:
+        self.db = db_session
 
     def save(self, issue: Issue) -> None:
-        db_issue = self.db.query(IssueDB).filter(IssueDB.id == str(issue.id)).first()
-        if not db_issue:
-            db_issue = IssueDB(id=str(issue.id))
-            self.db.add(db_issue)
+        from services.governance.infrastructure.models import IssueModel
 
-        db_issue.citizen_id = str(issue.citizen_id)
-        db_issue.title = issue.title
-        db_issue.description = issue.description
-        db_issue.category = issue.category
-        db_issue.location_address = issue.location.formatted_address
-        db_issue.latitude = issue.location.latitude
-        db_issue.longitude = issue.location.longitude
-        db_issue.status = issue.status.name
-        db_issue.priority = issue.priority.name if issue.priority else "LOW"
-        db_issue.department_id = (
-            str(issue.department_id) if issue.department_id else None
+        db_issue = IssueModel(
+            id=str(issue.id),
+            citizen_id=str(issue.citizen_id),
+            title=issue.title,
+            description=issue.description,
+            category=issue.category,
+            latitude=issue.location.latitude,
+            longitude=issue.location.longitude,
+            status=issue.status.name,
+            priority=issue.priority.name,
+            created_at=issue.created_at,
         )
+        self.db.merge(db_issue)
         self.db.commit()
 
     def get_by_id(self, issue_id: uuid.UUID) -> Issue | None:
-        db_issue = self.db.query(IssueDB).filter(IssueDB.id == str(issue_id)).first()
+        from services.governance.infrastructure.models import IssueModel
+
+        db_issue = (
+            self.db.query(IssueModel).filter(IssueModel.id == str(issue_id)).first()
+        )
         if not db_issue:
             return None
 
-        loc = Location(
-            latitude=db_issue.latitude,
-            longitude=db_issue.longitude,
-            formatted_address=db_issue.location_address,
-        )
+        from shared.domain.value_objects.location import Location
 
         return Issue(
             id=uuid.UUID(db_issue.id),
@@ -56,67 +67,42 @@ class SQLAlchemyIssueRepository(IssueRepository):
             title=db_issue.title,
             description=db_issue.description,
             category=db_issue.category,
-            location=loc,
-            status=IssueStatus[db_issue.status],
-            priority=Priority[db_issue.priority] if db_issue.priority else None,
-            department_id=(
-                uuid.UUID(db_issue.department_id) if db_issue.department_id else None
+            location=Location(
+                latitude=db_issue.latitude, longitude=db_issue.longitude
             ),
+            status=IssueStatus[db_issue.status],
+            priority=Priority[db_issue.priority],
+            created_at=db_issue.created_at,
         )
+
+    def list_pending() -> list[Issue]:
+        return []
 
 
 class SQLAlchemyRecommendationRepository(RecommendationRepository):
-    """SQLAlchemy implementation of the Recommendation Repository interface."""
+    """SQLAlchemy Implementation of Recommendation Repository."""
 
-    def __init__(self, db: Session) -> None:
-        self.db = db
+    def __init__(self, db_session: Any) -> None:
+        self.db = db_session
 
-    def save(
-        self,
-        recommendation: Recommendation,
-        suggested_category: str | None = None,
-        suggested_department: str | None = None,
-        confidence_score: float | None = None,
-    ) -> None:
-        db_rec = (
-            self.db.query(RecommendationDB)
-            .filter(RecommendationDB.id == str(recommendation.id))
-            .first()
+    def save(self, recommendation: Recommendation) -> None:
+        from services.governance.infrastructure.models import RecommendationModel
+
+        db_rec = RecommendationModel(
+            id=str(recommendation.id),
+            issue_id=str(recommendation.issue_id),
+            rationale=recommendation.content,
+            status=recommendation.status.name,
         )
-        if not db_rec:
-            db_rec = RecommendationDB(id=str(recommendation.id))
-            self.db.add(db_rec)
-
-        db_rec.issue_id = str(recommendation.issue_id)
-        db_rec.suggested_category = suggested_category or "general"
-        db_rec.suggested_department = suggested_department or "Public Works"
-        db_rec.confidence_score = confidence_score or 1.0
-        db_rec.rationale = recommendation.content
-        db_rec.status = recommendation.status.name
+        self.db.merge(db_rec)
         self.db.commit()
 
     def get_by_id(self, recommendation_id: uuid.UUID) -> Recommendation | None:
-        db_rec = (
-            self.db.query(RecommendationDB)
-            .filter(RecommendationDB.id == str(recommendation_id))
-            .first()
-        )
-        if not db_rec:
-            return None
+        from services.governance.infrastructure.models import RecommendationModel
 
-        # Map back to domain aggregate (which expects at least one evidence ID)
-        return Recommendation(
-            id=uuid.UUID(db_rec.id),
-            issue_id=uuid.UUID(db_rec.issue_id),
-            evidence_ids=[uuid.uuid4()],  # In Sprint 2 we mock the evidence list
-            content=db_rec.rationale,
-            status=RecommendationStatus[db_rec.status],
-        )
-
-    def get_by_issue_id(self, issue_id: uuid.UUID) -> Recommendation | None:
         db_rec = (
-            self.db.query(RecommendationDB)
-            .filter(RecommendationDB.issue_id == str(issue_id))
+            self.db.query(RecommendationModel)
+            .filter(RecommendationModel.id == str(recommendation_id))
             .first()
         )
         if not db_rec:
@@ -134,13 +120,125 @@ class SQLAlchemyRecommendationRepository(RecommendationRepository):
 class LogNotificationRepository(NotificationRepository):
     """Notification implementation that logs outgoing SMS messages."""
 
-    def notify(self, citizen_id: uuid.UUID, message: str) -> None:
-        from helix_platform.logging import get_logger
+    def notify(
+        self, citizen_id: uuid.UUID, message: str, to_phone: str | None = None
+    ) -> None:
+        logger = _get_notification_logger()
+        if hasattr(logger, "info"):
+            try:
+                logger.info(
+                    "sms_notification_sent",
+                    recipient=to_phone or "Citizen",
+                    citizen_id=str(citizen_id),
+                    message=message,
+                )
+            except Exception:
+                logger.info(
+                    f"[SMS Sent] Recipient: {to_phone or 'Citizen'} | Citizen ID: {citizen_id} | Message: {message}"
+                )
 
-        logger = get_logger("notifications")
-        logger.info(
-            "sms_notification_sent",
-            recipient="Citizen",
-            citizen_id=str(citizen_id),
-            message=message,
+
+class TwilioNotificationRepository(NotificationRepository):
+    """
+    Twilio SMS Notification Repository implementation.
+    Dispatches real-time operational SMS messages via Twilio REST API.
+    """
+
+    def __init__(
+        self,
+        account_sid: str | None = None,
+        auth_token: str | None = None,
+        from_phone: str | None = None,
+    ) -> None:
+        self.account_sid = account_sid or os.environ.get("TWILIO_ACCOUNT_SID", "")
+        self.auth_token = auth_token or os.environ.get("TWILIO_AUTH_TOKEN", "")
+        self.from_phone = (
+            from_phone
+            or os.environ.get("TWILIO_PHONE_NUMBER", "")
+            or os.environ.get("TWILIO_FROM_PHONE", "+15551234567")
         )
+        self.logger = _get_notification_logger()
+
+    def notify(
+        self, citizen_id: uuid.UUID, message: str, to_phone: str | None = None
+    ) -> None:
+        target_phone = (
+            to_phone
+            or os.environ.get("DEFAULT_CITIZEN_PHONE", "")
+            or "+15550192834"
+        )
+
+        is_configured = (
+            self.account_sid
+            and self.auth_token
+            and self.account_sid.startswith("AC")
+            and not self.account_sid.startswith("ACXXXX")
+            and not self.auth_token.startswith("your_")
+        )
+
+        if not is_configured:
+            # Fallback to simulation logging when credentials are absent or placeholders
+            if hasattr(self.logger, "info"):
+                try:
+                    self.logger.info(
+                        "twilio_sms_simulated",
+                        recipient=target_phone,
+                        citizen_id=str(citizen_id),
+                        message=message,
+                        reason="Twilio credentials not set in .env",
+                    )
+                except Exception:
+                    self.logger.info(
+                        f"[Twilio SMS Simulated] Recipient: {target_phone} | Citizen ID: {citizen_id} | Message: {message}"
+                    )
+            return
+
+        url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Messages.json"
+
+        payload_data = {
+            "From": self.from_phone,
+            "To": target_phone,
+            "Body": message,
+        }
+
+        encoded_payload = urllib.parse.urlencode(payload_data).encode("utf-8")
+
+        auth_string = f"{self.account_sid}:{self.auth_token}"
+        auth_header = "Basic " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8")
+
+        headers = {
+            "Authorization": auth_header,
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+        req = urllib.request.Request(
+            url, data=encoded_payload, headers=headers, method="POST"
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                resp_body = response.read().decode("utf-8")
+                if hasattr(self.logger, "info"):
+                    try:
+                        self.logger.info(
+                            "twilio_sms_sent",
+                            recipient=target_phone,
+                            citizen_id=str(citizen_id),
+                            message=message,
+                            twilio_response=resp_body[:150],
+                        )
+                    except Exception:
+                        self.logger.info(
+                            f"[Twilio SMS Sent] Recipient: {target_phone} | Message: {message}"
+                        )
+        except Exception as e:
+            if hasattr(self.logger, "error"):
+                try:
+                    self.logger.error(
+                        "twilio_sms_failed",
+                        recipient=target_phone,
+                        citizen_id=str(citizen_id),
+                        error=str(e),
+                    )
+                except Exception:
+                    self.logger.error(f"[Twilio SMS Failed] Error: {e}")

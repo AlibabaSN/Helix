@@ -21,6 +21,7 @@ from services.governance.application.services import (
     OfficerApplicationService,
     RecommendationApplicationService,
 )
+from shared.domain.repositories.notification import NotificationRepository
 from services.governance.application.spatial import SpatialIntelligenceService
 from services.governance.infrastructure.queries import SQLAlchemyGovernanceQueryService
 
@@ -80,7 +81,17 @@ def get_rec_repo(
     return SQLAlchemyRecommendationRepository(db)
 
 
-def get_notification_repo() -> LogNotificationRepository:
+def get_notification_repo() -> NotificationRepository:
+    import os
+    from services.governance.infrastructure.repositories import (
+        LogNotificationRepository,
+        TwilioNotificationRepository,
+    )
+
+    provider = os.environ.get("NOTIFICATION_PROVIDER", "").lower()
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    if provider == "twilio" or (account_sid and not account_sid.startswith("ACXXXX")):
+        return TwilioNotificationRepository()
     return LogNotificationRepository()
 
 
@@ -105,7 +116,7 @@ def get_rec_service(
 def get_officer_service(
     issue_repo: SQLAlchemyIssueRepository = Depends(get_issue_repo),
     rec_repo: SQLAlchemyRecommendationRepository = Depends(get_rec_repo),
-    notification_repo: LogNotificationRepository = Depends(get_notification_repo),
+    notification_repo: NotificationRepository = Depends(get_notification_repo),
 ) -> OfficerApplicationService:
     return OfficerApplicationService(issue_repo, rec_repo, notification_repo)
 
