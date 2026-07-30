@@ -43,6 +43,17 @@ class SQLAlchemyIssueRepository(IssueRepository):
             or getattr(issue, "formatted_address", None)
             or "Unknown Address"
         )
+        status_val = (
+            issue.status.name
+            if hasattr(issue.status, "name")
+            else (str(issue.status) if issue.status else "INTAKE")
+        )
+        priority_val = (
+            issue.priority.name
+            if hasattr(issue.priority, "name")
+            else (str(issue.priority) if issue.priority else "LOW")
+        )
+
         db_issue = IssueModel(
             id=str(issue.id),
             citizen_id=str(issue.citizen_id),
@@ -52,8 +63,8 @@ class SQLAlchemyIssueRepository(IssueRepository):
             location_address=loc_address,
             latitude=issue.location.latitude,
             longitude=issue.location.longitude,
-            status=issue.status.name,
-            priority=issue.priority.name,
+            status=status_val,
+            priority=priority_val,
             created_at=issue.created_at,
         )
         self.db.merge(db_issue)
@@ -70,6 +81,16 @@ class SQLAlchemyIssueRepository(IssueRepository):
 
         from shared.domain.value_objects.location import Location
 
+        try:
+            status_enum = IssueStatus[db_issue.status]
+        except (KeyError, ValueError, TypeError):
+            status_enum = IssueStatus.INTAKE
+
+        try:
+            priority_enum = Priority[db_issue.priority]
+        except (KeyError, ValueError, TypeError):
+            priority_enum = Priority.LOW
+
         return Issue(
             id=uuid.UUID(db_issue.id),
             citizen_id=uuid.UUID(db_issue.citizen_id),
@@ -77,8 +98,8 @@ class SQLAlchemyIssueRepository(IssueRepository):
             description=db_issue.description,
             category=db_issue.category,
             location=Location(latitude=db_issue.latitude, longitude=db_issue.longitude),
-            status=IssueStatus[db_issue.status],
-            priority=Priority[db_issue.priority],
+            status=status_enum,
+            priority=priority_enum,
             created_at=db_issue.created_at,
         )
 
@@ -101,11 +122,17 @@ class SQLAlchemyRecommendationRepository(RecommendationRepository):
     ) -> None:
         from services.governance.infrastructure.models import RecommendationModel
 
+        status_val = (
+            recommendation.status.name
+            if hasattr(recommendation.status, "name")
+            else (str(recommendation.status) if recommendation.status else "PROPOSED")
+        )
+
         db_rec = RecommendationModel(
             id=str(recommendation.id),
             issue_id=str(recommendation.issue_id),
             rationale=recommendation.content,
-            status=recommendation.status.name,
+            status=status_val,
         )
         self.db.merge(db_rec)
         self.db.commit()

@@ -358,7 +358,10 @@ async def get_issue_context(
         latitude=issue["latitude"],
         longitude=issue["longitude"],
     )
-    rec_details["priority"] = str(rec_details["priority"].name)
+    p_val = rec_details.get("priority")
+    rec_details["priority"] = (
+        p_val.name if hasattr(p_val, "name") else str(p_val or "LOW")
+    )
     return rec_details
 
 
