@@ -21,8 +21,6 @@ from services.governance.application.services import (
     OfficerApplicationService,
     RecommendationApplicationService,
 )
-from shared.domain.repositories.email import EmailRepository
-from shared.domain.repositories.notification import NotificationRepository
 from services.governance.application.spatial import SpatialIntelligenceService
 from services.governance.infrastructure.queries import SQLAlchemyGovernanceQueryService
 
@@ -33,6 +31,8 @@ from services.governance.infrastructure.repositories import (
     SQLAlchemyRecommendationRepository,
 )
 from services.governance.workflows import knowledge_service
+from shared.domain.repositories.email import EmailRepository
+from shared.domain.repositories.notification import NotificationRepository
 
 router = APIRouter(prefix="/governance", tags=["Governance"])
 
@@ -84,8 +84,8 @@ def get_rec_repo(
 
 def get_notification_repo() -> NotificationRepository:
     import os
+
     from services.governance.infrastructure.repositories import (
-        LogNotificationRepository,
         TwilioNotificationRepository,
     )
 
@@ -98,6 +98,7 @@ def get_notification_repo() -> NotificationRepository:
 
 def get_email_repo() -> EmailRepository:
     import os
+
     from services.governance.infrastructure.repositories import (
         HTTPEmailRepository,
         LogEmailRepository,
@@ -107,7 +108,7 @@ def get_email_repo() -> EmailRepository:
     provider = os.environ.get("EMAIL_PROVIDER", "").lower()
     if provider == "http" or os.environ.get("EMAIL_API_URL"):
         return HTTPEmailRepository()
-    elif provider == "smtp" or os.environ.get("SMTP_HOST"):
+    if provider == "smtp" or os.environ.get("SMTP_HOST"):
         return SMTPEmailRepository()
     return LogEmailRepository()
 
@@ -1009,4 +1010,3 @@ async def send_email_notification(
         raise HTTPException(
             status_code=500, detail=f"Failed to dispatch email: {e}"
         ) from e
-

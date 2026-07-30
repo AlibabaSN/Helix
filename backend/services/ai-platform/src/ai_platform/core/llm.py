@@ -82,7 +82,11 @@ class GemmaAdapter(LLMProvider):
             return LLMResponse(
                 content=f"[GemmaAdapter Simulation - GEMMA_API_KEY / GEMINI_API_KEY not set] Analysis for prompt: {last_msg[:120]}...",
                 raw_response={"status": "mocked", "reason": "no_api_key"},
-                usage={"prompt_tokens": 12, "completion_tokens": 16, "total_tokens": 28},
+                usage={
+                    "prompt_tokens": 12,
+                    "completion_tokens": 16,
+                    "total_tokens": 28,
+                },
                 model_name=self.model_name,
             )
 
@@ -108,7 +112,9 @@ class GemmaAdapter(LLMProvider):
                 headers["Authorization"] = f"Bearer {self.api_key}"
 
             data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(self.api_url, data=data, headers=headers, method="POST")
+            req = urllib.request.Request(
+                self.api_url, data=data, headers=headers, method="POST"
+            )
 
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as response:
@@ -134,7 +140,9 @@ class GemmaAdapter(LLMProvider):
                     model_name=self.model_name,
                 )
             except Exception as e:
-                raise RuntimeError(f"Gemma API request to {self.api_url} failed: {e}") from e
+                raise RuntimeError(
+                    f"Gemma API request to {self.api_url} failed: {e}"
+                ) from e
 
         # Case B: Google AI Studio Gemma API endpoint
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"

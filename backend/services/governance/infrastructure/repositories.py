@@ -21,9 +21,11 @@ from shared.domain.repositories.recommendation import RecommendationRepository
 def _get_notification_logger() -> Any:
     try:
         from helix_platform.logging import get_logger
+
         return get_logger("notifications")
     except Exception:
         import logging
+
         return logging.getLogger("notifications")
 
 
@@ -68,9 +70,7 @@ class SQLAlchemyIssueRepository(IssueRepository):
             title=db_issue.title,
             description=db_issue.description,
             category=db_issue.category,
-            location=Location(
-                latitude=db_issue.latitude, longitude=db_issue.longitude
-            ),
+            location=Location(latitude=db_issue.latitude, longitude=db_issue.longitude),
             status=IssueStatus[db_issue.status],
             priority=Priority[db_issue.priority],
             created_at=db_issue.created_at,
@@ -164,9 +164,7 @@ class TwilioNotificationRepository(NotificationRepository):
         self, citizen_id: uuid.UUID, message: str, to_phone: str | None = None
     ) -> None:
         target_phone = (
-            to_phone
-            or os.environ.get("DEFAULT_CITIZEN_PHONE", "")
-            or "+15550192834"
+            to_phone or os.environ.get("DEFAULT_CITIZEN_PHONE", "") or "+15550192834"
         )
 
         is_configured = (
@@ -205,7 +203,9 @@ class TwilioNotificationRepository(NotificationRepository):
         encoded_payload = urllib.parse.urlencode(payload_data).encode("utf-8")
 
         auth_string = f"{self.account_sid}:{self.auth_token}"
-        auth_header = "Basic " + base64.b64encode(auth_string.encode("utf-8")).decode("utf-8")
+        auth_header = "Basic " + base64.b64encode(auth_string.encode("utf-8")).decode(
+            "utf-8"
+        )
 
         headers = {
             "Authorization": auth_header,
@@ -413,4 +413,3 @@ class HTTPEmailRepository(EmailRepository):
                     )
                 except Exception:
                     self.logger.error(f"[Email HTTP Error] {e}")
-
