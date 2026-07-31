@@ -66,6 +66,12 @@ class SQLAlchemyIssueRepository(IssueRepository):
             "status": status_val,
             "priority": priority_val,
         }
+        dept_id_val = getattr(issue, "department_id", None) or getattr(
+            issue, "_department_id", None
+        )
+        if dept_id_val is not None:
+            issue_kwargs["department_id"] = str(dept_id_val)
+
         created_at_val = getattr(issue, "created_at", None)
         if created_at_val is not None:
             issue_kwargs["created_at"] = created_at_val
@@ -95,6 +101,12 @@ class SQLAlchemyIssueRepository(IssueRepository):
         except (KeyError, ValueError, TypeError):
             priority_enum = Priority.LOW
 
+        dept_uuid = (
+            uuid.UUID(db_issue.department_id)
+            if getattr(db_issue, "department_id", None)
+            else uuid.UUID("00000000-0000-0000-0000-000000000000")
+        )
+
         res_issue = Issue(
             id=uuid.UUID(db_issue.id),
             citizen_id=uuid.UUID(db_issue.citizen_id),
@@ -109,6 +121,7 @@ class SQLAlchemyIssueRepository(IssueRepository):
             ),
             status=status_enum,
             priority=priority_enum,
+            department_id=dept_uuid,
         )
         if hasattr(db_issue, "created_at") and db_issue.created_at is not None:
             res_issue.created_at = db_issue.created_at
