@@ -101,7 +101,12 @@ class SQLAlchemyIssueRepository(IssueRepository):
             title=db_issue.title,
             description=db_issue.description,
             category=db_issue.category,
-            location=Location(latitude=db_issue.latitude, longitude=db_issue.longitude),
+            location=Location(
+                latitude=db_issue.latitude,
+                longitude=db_issue.longitude,
+                formatted_address=getattr(db_issue, "location_address", None)
+                or "Unknown Address",
+            ),
             status=status_enum,
             priority=priority_enum,
         )
