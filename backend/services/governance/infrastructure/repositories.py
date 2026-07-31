@@ -54,19 +54,23 @@ class SQLAlchemyIssueRepository(IssueRepository):
             else (str(issue.priority) if issue.priority else "LOW")
         )
 
-        db_issue = IssueModel(
-            id=str(issue.id),
-            citizen_id=str(issue.citizen_id),
-            title=issue.title,
-            description=issue.description,
-            category=issue.category,
-            location_address=loc_address,
-            latitude=issue.location.latitude,
-            longitude=issue.location.longitude,
-            status=status_val,
-            priority=priority_val,
-            created_at=issue.created_at,
-        )
+        issue_kwargs: dict[str, Any] = {
+            "id": str(issue.id),
+            "citizen_id": str(issue.citizen_id),
+            "title": issue.title,
+            "description": issue.description,
+            "category": issue.category,
+            "location_address": loc_address,
+            "latitude": issue.location.latitude,
+            "longitude": issue.location.longitude,
+            "status": status_val,
+            "priority": priority_val,
+        }
+        created_at_val = getattr(issue, "created_at", None)
+        if created_at_val is not None:
+            issue_kwargs["created_at"] = created_at_val
+
+        db_issue = IssueModel(**issue_kwargs)
         self.db.merge(db_issue)
         self.db.commit()
 
@@ -91,7 +95,7 @@ class SQLAlchemyIssueRepository(IssueRepository):
         except (KeyError, ValueError, TypeError):
             priority_enum = Priority.LOW
 
-        return Issue(
+        res_issue = Issue(
             id=uuid.UUID(db_issue.id),
             citizen_id=uuid.UUID(db_issue.citizen_id),
             title=db_issue.title,
@@ -100,8 +104,10 @@ class SQLAlchemyIssueRepository(IssueRepository):
             location=Location(latitude=db_issue.latitude, longitude=db_issue.longitude),
             status=status_enum,
             priority=priority_enum,
-            created_at=db_issue.created_at,
         )
+        if hasattr(db_issue, "created_at") and db_issue.created_at is not None:
+            res_issue.created_at = db_issue.created_at
+        return res_issue
 
     def list_pending() -> list[Issue]:
         return []
