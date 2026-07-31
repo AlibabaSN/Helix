@@ -1058,3 +1058,42 @@ async def query_gemma_ai(
         raise HTTPException(
             status_code=500, detail=f"Gemma AI query failed: {e}"
         ) from e
+
+
+class FeedbackGenerateRequest(BaseModel):
+    title: str = Field(..., description="Issue title")
+    category: str = Field(..., description="Issue category")
+    status: str = Field("INTAKE", description="Current issue status")
+    location_address: str = Field("Unknown Address", description="Location address")
+    target_role: str = Field("citizen", description="Role: 'citizen' or 'officer'")
+
+
+@router.post("/feedback/generate", response_model=dict[str, Any])
+async def generate_gemma_feedback(
+    payload: FeedbackGenerateRequest,
+) -> dict[str, Any]:
+    """Generate structured AI feedback using OpenRouter / Gemma model layer."""
+    from services.governance.application.intelligence import GemmaFeedbackGenerator
+
+    feedback_gen = GemmaFeedbackGenerator()
+    if payload.target_role.lower() == "officer":
+        feedback_data = await feedback_gen.generate_officer_feedback(
+            {
+                "title": payload.title,
+                "category": payload.category,
+                "priority": payload.status,
+            }
+        )
+        return {"status": "success", "feedback_type": "officer", "data": feedback_data}
+
+    feedback_text = await feedback_gen.generate_citizen_feedback(
+        title=payload.title,
+        category=payload.category,
+        status=payload.status,
+        location_address=payload.location_address,
+    )
+    return {
+        "status": "success",
+        "feedback_type": "citizen",
+        "feedback": feedback_text,
+    }
