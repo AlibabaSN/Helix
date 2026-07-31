@@ -127,9 +127,9 @@ class SQLAlchemyRecommendationRepository(RecommendationRepository):
     def save(
         self,
         recommendation: Recommendation,
-        _suggested_category: str | None = None,
-        _suggested_department: str | None = None,
-        _confidence_score: float | None = None,
+        suggested_category: str | None = None,
+        suggested_department: str | None = None,
+        confidence_score: float | None = None,
     ) -> None:
         from services.governance.infrastructure.models import RecommendationModel
 
@@ -139,12 +139,20 @@ class SQLAlchemyRecommendationRepository(RecommendationRepository):
             else (str(recommendation.status) if recommendation.status else "PROPOSED")
         )
 
-        db_rec = RecommendationModel(
-            id=str(recommendation.id),
-            issue_id=str(recommendation.issue_id),
-            rationale=recommendation.content,
-            status=status_val,
-        )
+        rec_kwargs: dict[str, Any] = {
+            "id": str(recommendation.id),
+            "issue_id": str(recommendation.issue_id),
+            "rationale": recommendation.content,
+            "status": status_val,
+        }
+        if suggested_category is not None:
+            rec_kwargs["suggested_category"] = suggested_category
+        if suggested_department is not None:
+            rec_kwargs["suggested_department"] = suggested_department
+        if confidence_score is not None:
+            rec_kwargs["confidence_score"] = confidence_score
+
+        db_rec = RecommendationModel(**rec_kwargs)
         self.db.merge(db_rec)
         self.db.commit()
 
