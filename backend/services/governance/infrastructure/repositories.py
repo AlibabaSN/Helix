@@ -83,7 +83,7 @@ class SQLAlchemyIssueRepository(IssueRepository):
         if not db_issue:
             return None
 
-        from shared.domain.value_objects.location import Location
+        from shared.domain.value_objects import Location
 
         try:
             status_enum = IssueStatus[db_issue.status]
