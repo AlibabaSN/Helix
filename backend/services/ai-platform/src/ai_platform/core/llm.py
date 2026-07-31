@@ -41,10 +41,23 @@ class LLMProvider(ABC):
         provider_type = os.environ.get("LLM_PROVIDER", "").lower()
         if provider_type in ["gemini"]:
             return GeminiAdapter()
-        if provider_type in ["gemma", "gemma-2", "gemma2"]:
+        if provider_type in [
+            "gemma",
+            "gemma-2",
+            "gemma2",
+            "gemma-2-9b-it",
+            "gemma-2-27b-it",
+        ]:
             return GemmaAdapter()
         if provider_type == "mock":
             return MockProvider()
+        # Default to GemmaAdapter if GEMMA_API_KEY is present or LLM_PROVIDER is unset/empty
+        if (
+            os.environ.get("GEMMA_API_KEY")
+            or os.environ.get("GEMINI_API_KEY")
+            or not provider_type
+        ):
+            return GemmaAdapter()
         raise ConfigurationError(
             f"Unsupported or missing LLM_PROVIDER: '{provider_type}'. Must be 'gemma', 'gemini', or 'mock'."
         )

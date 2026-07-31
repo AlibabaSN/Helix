@@ -1014,3 +1014,47 @@ async def send_email_notification(
         raise HTTPException(
             status_code=500, detail=f"Failed to dispatch email: {e}"
         ) from e
+
+
+class AIQueryPayload(BaseModel):
+    prompt: str = Field(..., description="Query prompt for Gemma AI")
+    context: dict[str, Any] | None = Field(
+        None, description="Optional governance context data"
+    )
+
+
+@router.post("/ai/query", response_model=dict[str, Any])
+async def query_gemma_ai(
+    payload: AIQueryPayload,
+) -> dict[str, Any]:
+    """Execute a direct query against the Google Gemma 2 AI model for governance assistance."""
+    try:
+        from ai_platform.core.llm import LLMMessage, LLMProvider
+
+        llm = LLMProvider.get_provider()
+        system_prompt = (
+            "You are the Helix AI Governance Copilot powered by Google Gemma 2. "
+            "Provide concise, professional, policy-compliant governance analysis and actionable advice."
+        )
+        context_str = ""
+        if payload.context:
+            import json
+
+            context_str = f"\nContext Data: {json.dumps(payload.context)}"
+
+        messages = [
+            LLMMessage(role="system", content=system_prompt),
+            LLMMessage(role="user", content=f"{payload.prompt}{context_str}"),
+        ]
+        response = await llm.generate(messages)
+        return {
+            "status": "success",
+            "content": response.content,
+            "model_name": response.model_name,
+            "usage": response.usage,
+            "raw_response": response.raw_response,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Gemma AI query failed: {e}"
+        ) from e
